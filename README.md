@@ -1,136 +1,107 @@
-# Playwright MCP Server 🖥️🐍
+# Playwright MCP Server 🖥️🐳
 
-> Browser automation cho AI Agent qua Model Context Protocol (MCP) — Python edition
+> Browser automation cho AI Agent — Node.js + Docker
 >
-> Multi-browser, session persistence, async — Agent kết nối qua stdio
+> Multi-browser pool, session persistence, REST API
 
 ---
 
-### Cài đặt
+### Deploy
 
 ```bash
 git clone git@github.com:Hduc/playwright-mcp.git
 cd playwright-mcp
 
-# Tạo môi trường ảo + cài dependencies
-uv venv && uv pip install -e .
-
-# Cài Chromium (chỉ cần chạy 1 lần, ~150MB)
-python -m playwright install chromium
+# Build + run
+docker build -t playwright-mcp .
+docker run -d --name mcp -p 8000:8000 playwright-mcp
 ```
 
----
-
-### Chạy
+### Chạy có API key
 
 ```bash
-python server.py
-# MCP Server listening on stdio...
+docker run -d --name mcp -p 8000:8000 \
+  -e MCP_API_KEY=*** \
+  playwright-mcp
 ```
 
 ---
 
-### Agent kết nối
+### Kiểm tra
 
-Agent cấu hình MCP client:
+```bash
+curl http://localhost:8000/
+# → {"service":"playwright-mcp","version":"2.0.0","runtime":"node.js"}
 
-```json
-{
-    "mcpServers": {
-        "playwright": {
-            "command": "python",
-            "args": ["/path/to/playwright-mcp/server.py"]
-        }
-    }
-}
-```
-
-Hoặc dùng `uv`:
-
-```json
-{
-    "mcpServers": {
-        "playwright": {
-            "command": "uv",
-            "args": ["run", "python", "/path/to/playwright-mcp/server.py"]
-        }
-    }
-}
+# Có API key
+curl -X POST http://localhost:8000/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer *** \
+  -d '{"action":"browser_status"}'
+# → {"activeBrowsers":0,"browserIds":[]}
 ```
 
 ---
 
-### Tools (18 công cụ)
+### Tools (17 công cụ)
+
+Gọi qua `POST /` với body `{"action": "...", "arguments": {...}}`
 
 | Tool | Mô tả | Tham số |
 |---|---|---|
-| `browser_start` | Khởi tạo browser mới (mở nhiều) | `headless` (bool) |
+| `browser_start` | Mở browser mới | `headless?` |
 | `browser_stop` | Dừng browser | `browserId` |
-| `browser_status` | Xem trạng thái tất cả browser | — |
+| `browser_status` | Trạng thái pool | — |
 | `navigate` | Mở URL | `browserId`, `url` |
-| `screenshot` | Chụp màn hình → base64 PNG | `browserId`, `fullPage?` |
-| `click` | Click vào element | `browserId`, `selector` |
-| `type` | Gõ text vào input | `browserId`, `selector`, `text` |
-| `wait` | Đợi element hoặc N ms | `browserId`, `selector?`, `timeout?` |
+| `screenshot` | Chụp màn hình → base64 | `browserId` |
+| `click` | Click element | `browserId`, `selector` |
+| `type` | Gõ text | `browserId`, `selector`, `text` |
+| `wait` | Đợi selector/ms | `browserId`, `selector?`, `timeout?` |
 | `scroll` | Cuộn trang | `browserId`, `direction?`, `amount?` |
-| `get_text` | Lấy text từ element | `browserId`, `selector` |
-| `get_url` | Lấy URL hiện tại | `browserId` |
-| `evaluate` | Chạy JavaScript trên trang | `browserId`, `script` |
-| `wait_for_url` | Đợi URL thay đổi (login redirect) | `browserId`, `pattern`, `timeout?` |
+| `get_text` | Lấy text | `browserId`, `selector` |
+| `get_url` | Lấy URL | `browserId` |
+| `evaluate` | Chạy JavaScript | `browserId`, `script` |
+| `wait_for_url` | Đợi URL (login) | `browserId`, `pattern`, `timeout?` |
 | `close_page` | Đóng tab | `browserId` |
-| `session_save` | Lưu cookies + localStorage | `browserId`, `sessionId?` |
-| `session_load` | Nạp session đã lưu | `browserId`, `sessionId` |
-| `session_list` | Liệt kê sessions | — |
-
-> `?` = optional
+| `session_save` | Lưu cookies | `browserId`, `sessionId?` |
+| `session_load` | Nạp cookies | `browserId`, `sessionId` |
+| `session_list` | DS sessions | — |
 
 ---
 
-### Ví dụ: Agent login Zalo + lấy QR
+### Ví dụ: Login Zalo QR
 
-```json
-// 1. Mở browser
-{"method": "tools/call", "params": {"name": "browser_start", "arguments": {"headless": true}}}
-→ {"browserId": "browser_1"}
+```bash
+# 1. Mở browser
+curl -X POST http://localhost:8000/ \
+  -H "Authorization: Bearer *** \
+  -d '{"action":"browser_start"}'
+→ {"browserId":"browser_1"}
 
-// 2. Mở Zalo
-{"method": "tools/call", "params": {"name": "navigate", "arguments": {"browserId": "browser_1", "url": "https://chat.zalo.me/"}}}
-→ {"url": "https://chat.zalo.me/", "title": "Zalo Web"}
+# 2. Mở Zalo
+curl -X POST http://localhost:8000/ \
+  -H "Authorization: Bearer *** \
+  -d '{"action":"navigate","arguments":{"browserId":"browser_1","url":"https://chat.zalo.me/"}}'
 
-// 3. Đợi QR hiện
-{"method": "tools/call", "params": {"name": "wait", "arguments": {"browserId": "browser_1", "selector": "canvas", "timeout": 15000}}}
+# 3. Đợi QR + chụp
+curl -X POST http://localhost:8000/ \
+  -H "Authorization: Bearer *** \
+  -d '{"action":"wait","arguments":{"browserId":"browser_1","selector":"canvas","timeout":15000}}'
 
-// 4. Chụp QR gửi user
-{"method": "tools/call", "params": {"name": "screenshot", "arguments": {"browserId": "browser_1"}}}
-→ {"base64": "iVBORw0KGgo..."}
+curl -X POST http://localhost:8000/ \
+  -H "Authorization: Bearer *** \
+  -d '{"action":"screenshot","arguments":{"browserId":"browser_1"}}'
+→ {"base64":"iVBORw0KGgo..."}
 
-// 5. Đợi login thành công
-{"method": "tools/call", "params": {"name": "wait_for_url", "arguments": {"browserId": "browser_1", "pattern": "**/chat/**", "timeout": 120000}}}
-→ Login OK!
+# 4. Đợi login (URL đổi sang /chat/)
+curl -X POST http://localhost:8000/ \
+  -H "Authorization: Bearer *** \
+  -d '{"action":"wait_for_url","arguments":{"browserId":"browser_1","pattern":"**/chat/**","timeout":120000}}'
 
-// 6. Lưu session
-{"method": "tools/call", "params": {"name": "session_save", "arguments": {"browserId": "browser_1", "sessionId": "zalo_demo"}}}
-→ {"saved": true}
-```
-
----
-
-### Ví dụ: Mở nhiều browser cùng lúc
-
-```json
-// Browser 1 — Zalo
-{"method": "tools/call", "params": {"name": "browser_start", "arguments": {}}}
-→ {"browserId": "browser_1"}
-
-// Browser 2 — Facebook
-{"method": "tools/call", "params": {"name": "browser_start", "arguments": {}}}
-→ {"browserId": "browser_2"}
-
-// Browser 3 — WhatsApp
-{"method": "tools/call", "params": {"name": "browser_start", "arguments": {}}}
-→ {"browserId": "browser_3"}
-
-// Mỗi browser độc lập, không ảnh hưởng nhau
+# 5. Lưu session
+curl -X POST http://localhost:8000/ \
+  -H "Authorization: Bearer *** \
+  -d '{"action":"session_save","arguments":{"browserId":"browser_1","sessionId":"zalo_main"}}'
 ```
 
 ---
@@ -138,40 +109,28 @@ Hoặc dùng `uv`:
 ### Kiến trúc
 
 ```
-┌─────────┐     MCP (stdio)     ┌───────────────────┐
-│  Agent  │ ←─────────────────→ │ Playwright MCP     │
-│  (AI)   │                     │ Server (Python)    │
-└─────────┘                     │                    │
-                                │ ┌────────────────┐ │
-                                │ │ Browser Pool   │ │
-                                │ │ ├ browser_1 →  │ │
-                                │ │ ├ browser_2 →  │ │
-                                │ │ └ browser_3 →  │ │
-                                │ └────────────────┘ │
-                                │      ↓              │
-                                │  Playwright +       │
-                                │  Chromium instances │
-                                └─────────────────────┘
-                                        │
-                                    Web/Zalo
-                                /sessions/*.json
-                                (session persistence)
+┌─────────┐   REST API    ┌───────────────────────┐
+│  Agent  │ ───POST─────→ │ Playwright MCP Server  │
+│  (AI)   │ ←──JSON────── │ (Node.js + Docker)    │
+└─────────┘               │                       │
+                          │  ┌─────────────────┐  │
+                          │  │  Browser Pool   │  │
+                          │  │  ├ browser_1    │  │
+                          │  │  ├ browser_2    │  │
+                          │  │  └ browser_N    │  │
+                          │  └─────────────────┘  │
+                          │         ↓             │
+                          │  Chromium instances   │
+                          └───────────────────────┘
+                                   │
+                               Web/Zalo
+                          /app/sessions/
 ```
 
----
+### Yêu cầu
 
-### Yêu cầu hệ thống
-
-- Python >= 3.11
-- `uv` (pip installer nhanh)
-- Chromium browser (~150MB, tự cài qua `playwright install`)
-
-### Phát triển
-
-```bash
-uv pip install -e ".[dev]"
-pytest
-```
+- **Docker** (không cần cài gì khác)
+- Port 8000
 
 ### License
 
