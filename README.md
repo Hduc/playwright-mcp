@@ -1,22 +1,34 @@
-# Playwright MCP Server
+# Playwright MCP Server 🖥️🐍
 
-> Browser automation cho AI Agent qua Model Context Protocol (MCP)
+> Browser automation cho AI Agent qua Model Context Protocol (MCP) — Python edition
+>
+> Multi-browser, session persistence, async — Agent kết nối qua stdio
+
+---
 
 ### Cài đặt
 
 ```bash
 git clone git@github.com:Hduc/playwright-mcp.git
 cd playwright-mcp
-npm install
-npx playwright install chromium
+
+# Tạo môi trường ảo + cài dependencies
+uv venv && uv pip install -e .
+
+# Cài Chromium (chỉ cần chạy 1 lần, ~150MB)
+python -m playwright install chromium
 ```
+
+---
 
 ### Chạy
 
 ```bash
-npm start
+python server.py
 # MCP Server listening on stdio...
 ```
+
+---
 
 ### Agent kết nối
 
@@ -26,61 +38,141 @@ Agent cấu hình MCP client:
 {
     "mcpServers": {
         "playwright": {
-            "command": "node",
-            "args": ["/path/to/playwright-mcp/index.js"]
+            "command": "python",
+            "args": ["/path/to/playwright-mcp/server.py"]
         }
     }
 }
 ```
 
-### Các tool có sẵn
-
-| Tool | Mô tả | Ví dụ |
-|---|---|---|
-| `initialize` | Khởi động browser | `{ headless: false }` |
-| `navigate` | Mở URL trong tab mới | `{ url: "https://zalo.me" }` → `pageId` |
-| `screenshot` | Chụp ảnh màn hình (base64) | `{ pageId: "page_xxx" }` → `base64` |
-| `click` | Click vào element | `{ pageId, selector: "button" }` |
-| `type` | Gõ text | `{ pageId, selector: "input", text: "hello" }` |
-| `wait` | Đợi element hoặc timeout | `{ pageId, selector: ".qr", timeout: 10000 }` |
-| `get_text` | Lấy text từ element | `{ pageId, selector: "#title" }` |
-| `get_url` | Lấy URL hiện tại | `{ pageId }` |
-| `scroll` | Cuộn trang | `{ pageId, direction: "down", amount: 500 }` |
-| `wait_for_url` | Đợi URL thay đổi (login redirect) | `{ pageId, pattern: "**/chat/**", timeout: 120000 }` |
-| `close_page` | Đóng tab | `{ pageId }` |
-
-### Ví dụ: Login Zalo + QR
-
-Agent gửi các lệnh MCP:
+Hoặc dùng `uv`:
 
 ```json
-// 1. Mở Zalo
-{ "method": "tools/call", "params": { "name": "navigate", "arguments": { "url": "https://chat.zalo.me/" } } }
-→ { "pageId": "page_12345_abc" }
-
-// 2. Đợi QR
-{ "method": "tools/call", "params": { "name": "wait", "arguments": { "pageId": "page_12345_abc", "selector": "canvas", "timeout": 15000 } } }
-
-// 3. Chụp QR
-{ "method": "tools/call", "params": { "name": "screenshot", "arguments": { "pageId": "page_12345_abc" } } }
-→ { "base64": "iVBORw0KGgo..." } // Gửi QR cho user
-
-// 4. Đợi login thành công (URL đổi sang /chat/)
-{ "method": "tools/call", "params": { "name": "wait_for_url", "arguments": { "pageId": "page_12345_abc", "pattern": "**/chat/**", "timeout": 120000 } } }
-→ Login thành công!
+{
+    "mcpServers": {
+        "playwright": {
+            "command": "uv",
+            "args": ["run", "python", "/path/to/playwright-mcp/server.py"]
+        }
+    }
+}
 ```
+
+---
+
+### Tools (18 công cụ)
+
+| Tool | Mô tả | Tham số |
+|---|---|---|
+| `browser_start` | Khởi tạo browser mới (mở nhiều) | `headless` (bool) |
+| `browser_stop` | Dừng browser | `browserId` |
+| `browser_status` | Xem trạng thái tất cả browser | — |
+| `navigate` | Mở URL | `browserId`, `url` |
+| `screenshot` | Chụp màn hình → base64 PNG | `browserId`, `fullPage?` |
+| `click` | Click vào element | `browserId`, `selector` |
+| `type` | Gõ text vào input | `browserId`, `selector`, `text` |
+| `wait` | Đợi element hoặc N ms | `browserId`, `selector?`, `timeout?` |
+| `scroll` | Cuộn trang | `browserId`, `direction?`, `amount?` |
+| `get_text` | Lấy text từ element | `browserId`, `selector` |
+| `get_url` | Lấy URL hiện tại | `browserId` |
+| `evaluate` | Chạy JavaScript trên trang | `browserId`, `script` |
+| `wait_for_url` | Đợi URL thay đổi (login redirect) | `browserId`, `pattern`, `timeout?` |
+| `close_page` | Đóng tab | `browserId` |
+| `session_save` | Lưu cookies + localStorage | `browserId`, `sessionId?` |
+| `session_load` | Nạp session đã lưu | `browserId`, `sessionId` |
+| `session_list` | Liệt kê sessions | — |
+
+> `?` = optional
+
+---
+
+### Ví dụ: Agent login Zalo + lấy QR
+
+```json
+// 1. Mở browser
+{"method": "tools/call", "params": {"name": "browser_start", "arguments": {"headless": true}}}
+→ {"browserId": "browser_1"}
+
+// 2. Mở Zalo
+{"method": "tools/call", "params": {"name": "navigate", "arguments": {"browserId": "browser_1", "url": "https://chat.zalo.me/"}}}
+→ {"url": "https://chat.zalo.me/", "title": "Zalo Web"}
+
+// 3. Đợi QR hiện
+{"method": "tools/call", "params": {"name": "wait", "arguments": {"browserId": "browser_1", "selector": "canvas", "timeout": 15000}}}
+
+// 4. Chụp QR gửi user
+{"method": "tools/call", "params": {"name": "screenshot", "arguments": {"browserId": "browser_1"}}}
+→ {"base64": "iVBORw0KGgo..."}
+
+// 5. Đợi login thành công
+{"method": "tools/call", "params": {"name": "wait_for_url", "arguments": {"browserId": "browser_1", "pattern": "**/chat/**", "timeout": 120000}}}
+→ Login OK!
+
+// 6. Lưu session
+{"method": "tools/call", "params": {"name": "session_save", "arguments": {"browserId": "browser_1", "sessionId": "zalo_demo"}}}
+→ {"saved": true}
+```
+
+---
+
+### Ví dụ: Mở nhiều browser cùng lúc
+
+```json
+// Browser 1 — Zalo
+{"method": "tools/call", "params": {"name": "browser_start", "arguments": {}}}
+→ {"browserId": "browser_1"}
+
+// Browser 2 — Facebook
+{"method": "tools/call", "params": {"name": "browser_start", "arguments": {}}}
+→ {"browserId": "browser_2"}
+
+// Browser 3 — WhatsApp
+{"method": "tools/call", "params": {"name": "browser_start", "arguments": {}}}
+→ {"browserId": "browser_3"}
+
+// Mỗi browser độc lập, không ảnh hưởng nhau
+```
+
+---
 
 ### Kiến trúc
 
 ```
-┌─────────┐     MCP (stdio)     ┌───────────────┐
-│  Agent  │ ←─────────────────→ │ Playwright MCP │
-│  (AI)   │                     │    Server      │
-└─────────┘                     │  (index.js)    │
-                                │       │        │
-                                │  Chromium       │
-                                │  (Playwright)   │
-                                └───────┬─────────┘
+┌─────────┐     MCP (stdio)     ┌───────────────────┐
+│  Agent  │ ←─────────────────→ │ Playwright MCP     │
+│  (AI)   │                     │ Server (Python)    │
+└─────────┘                     │                    │
+                                │ ┌────────────────┐ │
+                                │ │ Browser Pool   │ │
+                                │ │ ├ browser_1 →  │ │
+                                │ │ ├ browser_2 →  │ │
+                                │ │ └ browser_3 →  │ │
+                                │ └────────────────┘ │
+                                │      ↓              │
+                                │  Playwright +       │
+                                │  Chromium instances │
+                                └─────────────────────┘
                                         │
                                     Web/Zalo
+                                /sessions/*.json
+                                (session persistence)
 ```
+
+---
+
+### Yêu cầu hệ thống
+
+- Python >= 3.11
+- `uv` (pip installer nhanh)
+- Chromium browser (~150MB, tự cài qua `playwright install`)
+
+### Phát triển
+
+```bash
+uv pip install -e ".[dev]"
+pytest
+```
+
+### License
+
+MIT
