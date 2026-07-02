@@ -157,9 +157,33 @@ def create_mcp_server(api_key=""):
 
     return server
 
+async def ensure_chromium_installed():
+    """Tự động cài Chromium nếu chưa có — không cần chạy lệnh riêng"""
+    import subprocess
+    from playwright.sync_api import sync_playwright
+    
+    def _install():
+        try:
+            with sync_playwright() as p:
+                p.chromium.launch()
+            logger.info("[Init] Chromium already installed ✅")
+        except Exception:
+            logger.info("[Init] Installing Chromium (~150MB)...")
+            result = subprocess.run(
+                [sys.executable, "-m", "playwright", "install", "chromium"],
+                capture_output=True, text=True, timeout=300
+            )
+            if result.returncode == 0:
+                logger.info("[Init] Chromium installed ✅")
+            else:
+                logger.error(f"[Init] Chromium install failed: {result.stderr}")
+    await asyncio.get_event_loop().run_in_executor(None, _install)
+
+
 # ======= stdio Transport =======
 
 async def run_stdio(api_key=""):
+    await ensure_chromium_installed()  # Auto-install
     from mcp.server.stdio import stdio_server
     server = create_mcp_server(api_key)
     async with stdio_server() as (read, write):
@@ -189,6 +213,7 @@ async def run_sse(host="0.0.0.0", port=8000, api_key=""):
             return await call_next(request)
 
     async def lifespan(app):
+        await ensure_chromium_installed()  # Auto-install Chromium
         logger.info(f"[SSE] Server @ {host}:{port} (API key: {'✅' if _key else '❌ DISABLED'})")
         yield
         await pool.stop_all()
